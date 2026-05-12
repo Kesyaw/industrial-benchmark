@@ -1,12 +1,14 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import pandas as pd
-import io
+import os
+import shutil
+
+from app.schemas import FinancialData, BenchmarkResult
+from app.services.pdf_extractor import extract_financial_data_from_pdf
+from app.services.benchmark_engine import calculate_benchmark
 
 app = FastAPI(title="Industrial Benchmark API")
 
-# Configure CORS for Next.js frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -15,48 +17,47 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class FinancialData(BaseModel):
-    company_name: str
-    revenue: float
-    net_income: float
-    total_assets: float
-    total_liabilities: float
-    total_equity: float
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "../data/pdfs")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @app.get("/")
 def read_root():
     return {"message": "Welcome to Industrial Benchmark API"}
 
-@app.post("/api/benchmark")
+@app.post("/api/benchmark", response_model=BenchmarkResult)
 def benchmark_data(data: FinancialData):
-    # Basic benchmark calculation (placeholder)
-    roe = data.net_income / data.total_equity if data.total_equity != 0 else 0
-    roa = data.net_income / data.total_assets if data.total_assets != 0 else 0
-    der = data.total_liabilities / data.total_equity if data.total_equity != 0 else 0
-
-    return {
-        "company": data.company_name,
-        "ratios": {
-            "ROE": round(roe, 4),
-            "ROA": round(roa, 4),
-            "DER": round(der, 4)
-        },
-        "status": "Healthy" if roe > 0.1 else "Needs Improvement"
-    }
+    # Process manual input via the benchmark engine
+    return calculate_benchmark(data)
 
 @app.post("/api/upload-pdf")
 async def upload_pdf(file: UploadFile = File(...)):
-    # Placeholder for PDF extraction
-    # In reality, we'd use pdfplumber or camelot here to parse the file
-    content = await file.read()
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
     
-    # Fake extracted data for demonstration
-    extracted_data = {
-        "company_name": file.filename.split(".")[0],
-        "revenue": 1000000,
-        "net_income": 150000,
-        "total_assets": 5000000,
-        "total_liabilities": 2000000,
-        "total_equity": 3000000
-    }
-    return {"message": f"Successfully parsed {file.filename}", "data": extracted_data}
+    file_path = os.path.join(UPLOAD_DIR, file.filename)
+    
+    # Save the file temporarily
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    try:
+        # Extract data
+        financial_data = extract_financial_data_from_pdf(file_path, file.filename)
+        
+        # Calculate benchmark
+        result = calculate_benchmark(financial_data)
+        
+        return {
+            "message": f"Successfully processed {file.filename}",
+            "extracted_data": financial_data.model_dump(),
+            "benchmark_result": result.model_dump()
+        }
+    except Exception as e:
+        import traceback
+        error_msg = traceback.format_exc()
+        print("ERROR IN UPLOAD PDF:", error_msg)
+        raise HTTPException(status_code=500, detail=str(error_msg))
+    finally:
+        # Optionally, remove the file after processing
+        # os.remove(file_path)
+        pass
