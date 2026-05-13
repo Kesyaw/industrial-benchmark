@@ -51,11 +51,18 @@ def extract_financial_data_from_pdf(pdf_path: str, filename: str) -> FinancialDa
 
     return FinancialData(
         company_name=company_name,
+        sector_code="TRADE",  # default — user can change later
         current_assets=current_assets,
         current_liabilities=current_liabilities,
         ebit=ebit,
         interest_expense=interest_expense,
+        ebitda=ebit,  # approximate — D&A not extracted from PDF yet
         total_debt=total_debt,
         total_equity=total_equity,
+        long_term_debt=0.0,
+        total_assets=current_assets + total_debt,  # rough estimate
+        gross_profit=0.0,
+        net_income=0.0,
+        revenue=0.0,
         free_operating_cash_flow=focf
     )
