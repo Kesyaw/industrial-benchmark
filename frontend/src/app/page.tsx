@@ -172,7 +172,7 @@ export default function Home() {
           {(["explorer", "manual", "pdf"] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all capitalize ${activeTab === tab ? "bg-neutral-800 text-white shadow-sm" : "text-neutral-400 hover:text-white"}`}>
-              {tab === "explorer" ? "📊 Explorer" : tab === "manual" ? "✏️ Manual" : "📄 PDF Upload"}
+              {tab === "explorer" ? "Explorer" : tab === "manual" ? "Manual Entry" : "PDF Upload"}
             </button>
           ))}
         </div>
@@ -188,7 +188,7 @@ export default function Home() {
                   <h3 className="font-semibold text-white">Sectors</h3>
                   <button onClick={runEtl} disabled={etlRunning}
                     className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition disabled:opacity-50">
-                    {etlRunning ? "Pulling..." : "🔄 Pull IDX Data"}
+                    {etlRunning ? "Pulling..." : "Pull IDX Data"}
                   </button>
                 </div>
                 <select value={selectedSector} onChange={e => setSelectedSector(e.target.value)}
@@ -251,7 +251,7 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="bg-neutral-900/30 border border-neutral-800 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center text-center min-h-[400px]">
-                  <div className="w-16 h-16 rounded-full bg-neutral-800/50 flex items-center justify-center mb-4 text-3xl">📊</div>
+                  <div className="w-16 h-16 rounded-full bg-neutral-800/50 flex items-center justify-center mb-4"><svg className="w-8 h-8 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 13h2v8H3zm6-4h2v12H9zm6-3h2v15h-2zm6-2h2v17h-2z" /></svg></div>
                   <h3 className="text-xl font-semibold text-neutral-300">Select a Company</h3>
                   <p className="text-neutral-500 mt-2 max-w-sm">Choose a sector and click on a company to view its financial data and computed ratios.</p>
                 </div>
@@ -332,7 +332,7 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="bg-neutral-900/30 border border-neutral-800 border-dashed rounded-2xl p-8 min-h-[400px] flex flex-col items-center justify-center text-center space-y-4">
-                  <div className="w-16 h-16 rounded-full bg-neutral-800/50 flex items-center justify-center mb-2 text-3xl">📈</div>
+                  <div className="w-16 h-16 rounded-full bg-neutral-800/50 flex items-center justify-center mb-2"><svg className="w-8 h-8 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div>
                   <h3 className="text-xl font-semibold text-neutral-300">Awaiting Data</h3>
                   <p className="text-neutral-500 max-w-sm">Enter financial data and click Calculate to see the benchmark result.</p>
                 </div>
@@ -349,7 +349,7 @@ export default function Home() {
                 <div className="border-2 border-dashed border-neutral-700 rounded-2xl p-10 text-center hover:border-emerald-500/50 transition-colors cursor-pointer bg-neutral-950/50"
                   onClick={() => fileInputRef.current?.click()}>
                   <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleFileChange} />
-                  <div className="w-16 h-16 mx-auto bg-neutral-800 rounded-full flex items-center justify-center mb-4 text-3xl">📄</div>
+                  <div className="w-16 h-16 mx-auto bg-neutral-800 rounded-full flex items-center justify-center mb-4"><svg className="w-8 h-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg></div>
                   <h3 className="text-lg font-medium text-white mb-1">{selectedFile ? selectedFile.name : "Click to upload PDF"}</h3>
                   <p className="text-sm text-neutral-500">Upload an Annual Report (LK Tahunan) PDF</p>
                 </div>
@@ -378,7 +378,7 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="bg-neutral-900/30 border border-neutral-800 border-dashed rounded-2xl p-8 min-h-[400px] flex flex-col items-center justify-center text-center space-y-4">
-                  <div className="w-16 h-16 rounded-full bg-neutral-800/50 flex items-center justify-center mb-2 text-3xl">📄</div>
+                  <div className="w-16 h-16 rounded-full bg-neutral-800/50 flex items-center justify-center mb-2"><svg className="w-8 h-8 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div>
                   <h3 className="text-xl font-semibold text-neutral-300">Upload PDF</h3>
                   <p className="text-neutral-500 max-w-sm">Upload an Annual Report PDF to automatically extract financial data and calculate benchmark.</p>
                 </div>
