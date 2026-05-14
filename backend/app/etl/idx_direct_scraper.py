@@ -72,6 +72,7 @@ BALANCE_SHEET_MAP = {
     "Total Current Assets": "current_assets",
     "Jumlah Aset": "total_assets",
     "Total Assets": "total_assets",
+    "Aset": "total_assets",
     "Piutang Usaha": "accounts_receivable",
     "Trade Receivables": "accounts_receivable",
     "Persediaan": "inventory",
@@ -82,8 +83,10 @@ BALANCE_SHEET_MAP = {
     "Total Non-Current Liabilities": "long_term_debt",
     "Jumlah Liabilitas": "total_liabilities",
     "Total Liabilities": "total_liabilities",
+    "Liabilitas": "total_liabilities",
     "Jumlah Ekuitas": "total_equity",
     "Total Equity": "total_equity",
+    "Ekuitas": "total_equity",
 }
 
 INCOME_STATEMENT_MAP = {
@@ -91,19 +94,32 @@ INCOME_STATEMENT_MAP = {
     "Revenue": "total_revenue",
     "Penjualan Neto": "total_revenue",
     "Net Revenue": "total_revenue",
+    "Penjualan dan pendapatan usaha": "total_revenue",
     "Beban Pokok Penjualan": "total_cogs",
     "Cost of Revenue": "total_cogs",
+    "Beban pokok penjualan dan pendapatan": "total_cogs",
     "Laba Bruto": "gross_profit",
     "Gross Profit": "gross_profit",
+    "Jumlah laba bruto": "gross_profit",
     "Laba Usaha": "ebit",
     "Operating Income": "ebit",
+    "Laba (rugi) usaha": "ebit",
+    "Jumlah laba (rugi) usaha": "ebit",
     "Beban Bunga": "interest_expense",
     "Interest Expense": "interest_expense",
+    "Beban bunga dan keuangan": "interest_expense",
     "Laba Sebelum Pajak": "ebt",
     "Income Before Tax": "ebt",
+    "Laba (rugi) sebelum pajak penghasilan": "ebt",
+    "Jumlah laba (rugi) sebelum pajak penghasilan": "ebt",
     "Laba Bersih": "net_income",
     "Net Income": "net_income",
     "Profit for the Period": "net_income",
+    "Laba (rugi) tahun berjalan": "net_income",
+    "Jumlah laba (rugi) tahun berjalan": "net_income",
+    "Laba (rugi) bersih tahun berjalan": "net_income",
+    "Laba (rugi) bersih": "net_income",
+    "Laba (rugi) yang dapat diatribusikan ke entitas induk": "net_income",
 }
 
 
@@ -179,10 +195,10 @@ def parse_idx_xlsx(filepath: str, db: Session, company: Company, year: int, defn
         try:
             df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
             # Try to find the relevant data — IDX xlsx formats vary
-            mapping = {**BALANCE_SHEET_MAP, **INCOME_STATEMENT_MAP}
+            mapping = {k.lower(): v for k, v in {**BALANCE_SHEET_MAP, **INCOME_STATEMENT_MAP}.items()}
             for idx_row in range(len(df)):
                 for idx_col in range(len(df.columns)):
-                    cell_val = str(df.iloc[idx_row, idx_col]).strip()
+                    cell_val = str(df.iloc[idx_row, idx_col]).strip().lower()
                     if cell_val in mapping:
                         metric_code = mapping[cell_val]
                         # Try to get the numeric value from the next column(s)

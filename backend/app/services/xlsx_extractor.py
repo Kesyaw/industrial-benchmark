@@ -33,21 +33,25 @@ def extract_financial_data_from_xlsx(filepath: str, filename: str) -> FinancialD
         "total_revenue": 0.0,
         "total_liabilities": 0.0,
         "free_operating_cash_flow": 0.0,
+        "ebt": 0.0,
+        "total_cogs": 0.0,
     }
 
     try:
         xls = pd.ExcelFile(filepath)
-        mapping = {**BALANCE_SHEET_MAP, **INCOME_STATEMENT_MAP}
+        mapping = {k.lower(): v for k, v in {**BALANCE_SHEET_MAP, **INCOME_STATEMENT_MAP}.items()}
         
         for sheet_name in xls.sheet_names:
             df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
             for idx_row in range(len(df)):
                 for idx_col in range(len(df.columns)):
-                    cell_val = str(df.iloc[idx_row, idx_col]).strip()
+                    cell_val = str(df.iloc[idx_row, idx_col]).strip().lower()
                     if cell_val in mapping:
                         metric_code = mapping[cell_val]
                         for val_col in range(idx_col + 1, min(idx_col + 5, len(df.columns))):
                             raw_val = df.iloc[idx_row, val_col]
+                            if pd.isna(raw_val) or str(raw_val).strip().lower() in ['nan', 'none', '-', '']:
+                                continue
                             try:
                                 numeric_val = float(str(raw_val).replace(",", "").replace(" ", ""))
                                 if metric_code in extracted_data:
@@ -62,6 +66,9 @@ def extract_financial_data_from_xlsx(filepath: str, filename: str) -> FinancialD
     if extracted_data["total_debt"] == 0 and extracted_data["total_liabilities"] > 0:
         extracted_data["total_debt"] = extracted_data["total_liabilities"]
         
+    if extracted_data["ebit"] == 0 and extracted_data["ebt"] != 0:
+        extracted_data["ebit"] = extracted_data["ebt"] + extracted_data["interest_expense"]
+
     if extracted_data["ebitda"] == 0:
         extracted_data["ebitda"] = extracted_data["ebit"]
         
@@ -71,6 +78,12 @@ def extract_financial_data_from_xlsx(filepath: str, filename: str) -> FinancialD
     # FOCF estimation if missing D&A and capex
     extracted_data["free_operating_cash_flow"] = extracted_data["net_income"]
     
+    # Remove keys not in FinancialData
+    extracted_data.pop("total_revenue", None)
+    extracted_data.pop("total_liabilities", None)
+    extracted_data.pop("ebt", None)
+    extracted_data.pop("total_cogs", None)
+
     return FinancialData(
         company_name=company_name,
         sector_code="TRADE", # default, can be overridden by user
