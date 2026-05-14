@@ -179,7 +179,7 @@ def get_sector_benchmark(sector_code: str, db: Session = Depends(get_db)):
 # ─────────────────────────────────────────
 # REPORT UPLOAD (PDF or XLSX)
 # ─────────────────────────────────────────
-@app.post("/api/upload-report")
+@app.post("/api/upload-pdf")
 async def upload_report(file: UploadFile = File(...), db: Session = Depends(get_db)):
     if not (file.filename.endswith(".pdf") or file.filename.endswith(".xlsx")):
         raise HTTPException(status_code=400, detail="Only PDF or XLSX files are allowed.")
@@ -220,20 +220,6 @@ def run_seed(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@app.post("/api/etl/run")
-def run_etl_endpoint(req: EtlRunRequest, db: Session = Depends(get_db)):
-    """Trigger IDX data pull via ETL pipeline."""
-    from app.etl.idx_scraper import run_etl
-    try:
-        run_etl(
-            sector_filter=req.sector_filter,
-            year=req.year,
-            limit=req.limit,
-        )
-        return {"status": "ok", "message": "ETL completed"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/etl/compute-ratios")

@@ -32,7 +32,7 @@ export default function Home() {
 
   const [result, setResult] = useState<BenchmarkResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"explorer" | "manual" | "pdf">("explorer");
+  const [activeTab, setActiveTab] = useState<"explorer" | "manual" | "upload">("explorer");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [etlRunning, setEtlRunning] = useState(false);
