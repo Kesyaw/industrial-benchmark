@@ -69,8 +69,10 @@ def generate_benchmark_pdf(result: dict) -> bytes:
     Returns the PDF as bytes.
     """
     buffer = io.BytesIO()
+    company = result.get("company", "Report")
     doc = SimpleDocTemplate(
         buffer, pagesize=A4,
+        title=f"Benchmark Report - {company}",
         leftMargin=20*mm, rightMargin=20*mm,
         topMargin=15*mm, bottomMargin=15*mm,
     )

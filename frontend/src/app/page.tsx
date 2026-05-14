@@ -33,6 +33,9 @@ export default function Home() {
   const [result, setResult] = useState<BenchmarkResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"explorer" | "manual" | "upload">("explorer");
+  const [explorerTab, setExplorerTab] = useState<"laporan" | "analisa">("laporan");
+  const [explorerResult, setExplorerResult] = useState<BenchmarkResult | null>(null);
+  const [loadingBenchmark, setLoadingBenchmark] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [etlRunning, setEtlRunning] = useState(false);
@@ -50,11 +53,30 @@ export default function Home() {
 
   const loadCompanyDetail = async (ticker: string) => {
     setSelectedCompany(ticker);
+    setExplorerTab("laporan");
+    setExplorerResult(null);
     try {
       const r = await fetch(`${API}/api/companies/${ticker}`);
       const data = await r.json();
       setCompanyDetail(data);
     } catch { setCompanyDetail(null); }
+  };
+
+  const loadBenchmark = async (ticker: string, year: number) => {
+    try {
+      setLoadingBenchmark(true);
+      const r = await fetch(`${API}/api/companies/${ticker}/benchmark/${year}`);
+      if (r.ok) {
+        const data = await r.json();
+        setExplorerResult(data);
+      } else {
+        setExplorerResult(null);
+      }
+    } catch {
+      setExplorerResult(null);
+    } finally {
+      setLoadingBenchmark(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -128,19 +150,19 @@ export default function Home() {
     } finally { setEtlRunning(false); }
   };
 
-  const downloadPdf = async () => {
-    if (!result) return;
+  const downloadPdf = async (resToDownload: BenchmarkResult | null) => {
+    if (!resToDownload) return;
     try {
       const response = await fetch(`${API}/api/benchmark/report-from-result`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(result),
+        body: JSON.stringify(resToDownload),
       });
       if (!response.ok) throw new Error("Failed to generate PDF");
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `benchmark_${result.company?.replace(/\s+/g, "_") || "report"}.pdf`;
+      a.download = `benchmark_${resToDownload.company?.replace(/\s+/g, "_") || "report"}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -250,26 +272,78 @@ export default function Home() {
                     )}
                   </div>
 
-                  {companyDetail.periods?.map((p: any) => (
-                    <div key={p.period_id} className="space-y-3">
-                      <h3 className="text-sm font-semibold text-emerald-400 border-b border-neutral-800 pb-2">
-                        FY {p.fiscal_year} ({p.period_type}) — {p.source}
-                      </h3>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {p.metrics?.slice(0, 30).map((m: any) => (
-                          <div key={m.code} className="bg-neutral-950 rounded-lg p-3 border border-neutral-800/50">
-                            <p className="text-[10px] text-neutral-500 uppercase tracking-wider">{m.name_en}</p>
-                            <p className="text-sm font-mono text-white mt-0.5">
-                              {m.value != null ? (m.unit === "IDR" ? (m.value / 1e9).toFixed(2) + "B" : m.value.toFixed(4)) : "—"}
-                            </p>
-                          </div>
-                        ))}
+                  {/* Explorer Tabs */}
+                  <div className="flex space-x-6 border-b border-neutral-800 mb-6">
+                    <button 
+                      onClick={() => setExplorerTab("laporan")}
+                      className={`pb-2 text-sm font-medium transition-colors ${explorerTab === "laporan" ? "text-emerald-400 border-b-2 border-emerald-400" : "text-neutral-500 hover:text-neutral-300"}`}
+                    >
+                      Laporan Keuangan
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setExplorerTab("analisa");
+                        if (!explorerResult && companyDetail.periods?.[0]) {
+                          loadBenchmark(companyDetail.company.ticker, companyDetail.periods[0].fiscal_year);
+                        }
+                      }}
+                      className={`pb-2 text-sm font-medium transition-colors ${explorerTab === "analisa" ? "text-emerald-400 border-b-2 border-emerald-400" : "text-neutral-500 hover:text-neutral-300"}`}
+                    >
+                      Analisa Benchmark
+                    </button>
+                  </div>
+
+                  {explorerTab === "laporan" ? (
+                    companyDetail.periods?.map((p: any) => (
+                      <div key={p.period_id} className="space-y-3">
+                        <h3 className="text-sm font-semibold text-emerald-400 border-b border-neutral-800 pb-2">
+                          FY {p.fiscal_year} ({p.period_type}) — {p.source}
+                        </h3>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {p.metrics?.slice(0, 30).map((m: any) => (
+                            <div key={m.code} className="bg-neutral-950 rounded-lg p-3 border border-neutral-800/50">
+                              <p className="text-[10px] text-neutral-500 uppercase tracking-wider">{m.name_en}</p>
+                              <p className="text-sm font-mono text-white mt-0.5">
+                                {m.value != null ? (m.unit === "IDR" ? (m.value / 1e9).toFixed(2) + "B" : m.value.toFixed(4)) : "—"}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                        {p.metrics?.length > 30 && (
+                          <p className="text-xs text-neutral-500">+ {p.metrics.length - 30} more metrics</p>
+                        )}
                       </div>
-                      {p.metrics?.length > 30 && (
-                        <p className="text-xs text-neutral-500">+ {p.metrics.length - 30} more metrics</p>
+                    ))
+                  ) : (
+                    <div className="space-y-6">
+                      {loadingBenchmark ? (
+                        <p className="text-neutral-500 text-center py-10">Calculating benchmark...</p>
+                      ) : explorerResult ? (
+                        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 relative overflow-hidden">
+                          <div className="flex items-center justify-between mb-6">
+                            <div><h2 className="text-xl font-bold">Analysis Result</h2><p className="text-neutral-400">{explorerResult.company}</p></div>
+                            <span className={`px-4 py-1.5 rounded-full text-sm font-bold border ${getPredicateColor(explorerResult.health_predicate)}`}>{explorerResult.health_predicate}</span>
+                          </div>
+                          <div className="grid sm:grid-cols-2 gap-3">
+                            {explorerResult.score_details?.map(d => (
+                              <div key={d.ratio_code} className="bg-neutral-950 p-4 rounded-xl border border-neutral-800/50">
+                                <p className="text-neutral-400 text-xs mb-1">{d.ratio_code.replace(/_/g, " ")}</p>
+                                <p className="text-xl font-mono text-white">{formatNum(d.ratio_value)}</p>
+                                <p className={`text-xs mt-1 ${getLevelColor(d.score)}`}>{d.level_label} — Score: {d.score ?? "—"}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <button onClick={() => downloadPdf(explorerResult)}
+                            className="mt-4 w-full py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm font-medium border border-neutral-700 transition-all flex items-center justify-center gap-2">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" /></svg>
+                            Download PDF Report
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-neutral-500 text-center py-10">No benchmark data available. Ensure all required metrics are present.</p>
                       )}
                     </div>
-                  ))}
+                  )}
                 </div>
               ) : (
                 <div className="bg-neutral-900/30 border border-neutral-800 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center text-center min-h-[400px]">
@@ -351,7 +425,7 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
-                  <button onClick={downloadPdf}
+                  <button onClick={() => downloadPdf(result)}
                     className="mt-4 w-full py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm font-medium border border-neutral-700 transition-all flex items-center justify-center gap-2">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" /></svg>
                     Download PDF Report
@@ -402,7 +476,7 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
-                  <button onClick={downloadPdf}
+                  <button onClick={() => downloadPdf(result)}
                     className="mt-4 w-full py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm font-medium border border-neutral-700 transition-all flex items-center justify-center gap-2">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" /></svg>
                     Download PDF Report

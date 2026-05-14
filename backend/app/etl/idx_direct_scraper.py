@@ -135,11 +135,15 @@ def download_idx_report(ticker: str, year: int, scraper) -> str | None:
     url = f"{base_url}{ticker}/{filename}"
 
     local_path = os.path.join(DOWNLOAD_DIR, f"{ticker}_{year}.xlsx")
+    fallback_path = os.path.join(DOWNLOAD_DIR, f"{ticker}.xlsx")
 
-    # Skip if already downloaded
+    # Skip if already downloaded or manually placed
     if os.path.exists(local_path) and os.path.getsize(local_path) > 1000:
         log.info(f"  Already downloaded: {local_path}")
         return local_path
+    if os.path.exists(fallback_path) and os.path.getsize(fallback_path) > 1000:
+        log.info(f"  Found manual scraped file: {fallback_path}")
+        return fallback_path
 
     try:
         log.info(f"  Downloading {ticker} ({year}) from IDX...")

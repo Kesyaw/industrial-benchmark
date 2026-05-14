@@ -138,6 +138,52 @@ def get_company_detail(ticker: str, db: Session = Depends(get_db)):
         "periods": result_periods,
     }
 
+@app.get("/api/companies/{ticker}/benchmark/{year}")
+def get_company_benchmark_by_year(ticker: str, year: int, db: Session = Depends(get_db)):
+    company = db.query(Company).filter(Company.ticker == ticker.upper()).first()
+    if not company:
+        raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
+        
+    period = db.query(FinancialPeriod).filter(
+        FinancialPeriod.company_id == company.id,
+        FinancialPeriod.fiscal_year == year
+    ).first()
+    
+    if not period:
+        raise HTTPException(status_code=404, detail=f"No data for {ticker} in {year}")
+        
+    metrics = (
+        db.query(MetricDefinition.code, FinancialMetric.metric_value)
+        .join(FinancialMetric, FinancialMetric.metric_definition_id == MetricDefinition.id)
+        .filter(FinancialMetric.period_id == period.id)
+        .all()
+    )
+    
+    extracted_data = {m.code: float(m.metric_value) for m in metrics if m.metric_value is not None}
+    sector = db.query(Sector).filter(Sector.id == company.sector_id).first()
+    
+    data_dict = {
+        "company_name": company.ticker,
+        "sector_code": sector.code if sector else "TRADE",
+        "current_assets": extracted_data.get("current_assets", 0.0),
+        "current_liabilities": extracted_data.get("current_liabilities", 0.0),
+        "ebit": extracted_data.get("ebit", 0.0),
+        "interest_expense": extracted_data.get("interest_expense", 0.0),
+        "ebitda": extracted_data.get("ebitda", 0.0),
+        "total_debt": extracted_data.get("total_debt", 0.0),
+        "total_equity": extracted_data.get("total_equity", 0.0),
+        "long_term_debt": extracted_data.get("long_term_debt", 0.0),
+        "total_assets": extracted_data.get("total_assets", 0.0),
+        "gross_profit": extracted_data.get("gross_profit", 0.0),
+        "net_income": extracted_data.get("net_income", 0.0),
+        "revenue": extracted_data.get("revenue", 0.0),
+        "free_operating_cash_flow": extracted_data.get("free_operating_cash_flow", 0.0),
+    }
+    
+    fin_data = FinancialData(**data_dict)
+    result = calculate_benchmark(fin_data, db=db)
+    return result
+
 # ─────────────────────────────────────────
 # BENCHMARK (manual input)
 # ─────────────────────────────────────────
