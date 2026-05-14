@@ -191,10 +191,10 @@ export default function Home() {
 
         {/* Tab Navigation */}
         <div className="flex space-x-2 bg-neutral-900/50 p-1.5 rounded-xl border border-neutral-800 max-w-lg mx-auto">
-          {(["explorer", "manual", "pdf"] as const).map(tab => (
+          {(["explorer", "manual", "upload"] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all capitalize ${activeTab === tab ? "bg-neutral-800 text-white shadow-sm" : "text-neutral-400 hover:text-white"}`}>
-              {tab === "explorer" ? "Explorer" : tab === "manual" ? "Manual Entry" : "PDF Upload"}
+              {tab === "explorer" ? "Explorer" : tab === "manual" ? "Manual Entry" : "Report Upload"}
             </button>
           ))}
         </div>
@@ -368,21 +368,21 @@ export default function Home() {
           </div>
         )}
 
-        {/* ═══════════ PDF TAB ═══════════ */}
-        {activeTab === "pdf" && (
+        {/* ═══════════ UPLOAD TAB ═══════════ */}
+        {activeTab === "upload" && (
           <div className="grid lg:grid-cols-12 gap-8">
             <section className="lg:col-span-5 bg-neutral-900/50 border border-neutral-800 rounded-2xl p-6">
               <form onSubmit={handleSubmitPDF} className="space-y-5">
                 <div className="border-2 border-dashed border-neutral-700 rounded-2xl p-10 text-center hover:border-emerald-500/50 transition-colors cursor-pointer bg-neutral-950/50"
                   onClick={() => fileInputRef.current?.click()}>
-                  <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleFileChange} />
+                  <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.xlsx" onChange={handleFileChange} />
                   <div className="w-16 h-16 mx-auto bg-neutral-800 rounded-full flex items-center justify-center mb-4"><svg className="w-8 h-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg></div>
-                  <h3 className="text-lg font-medium text-white mb-1">{selectedFile ? selectedFile.name : "Click to upload PDF"}</h3>
-                  <p className="text-sm text-neutral-500">Upload an Annual Report (LK Tahunan) PDF</p>
+                  <h3 className="text-lg font-medium text-white mb-1">{selectedFile ? selectedFile.name : "Click to upload report"}</h3>
+                  <p className="text-sm text-neutral-500">Upload Annual Report (PDF or XLSX)</p>
                 </div>
                 <button type="submit" disabled={loading || !selectedFile}
                   className="w-full bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold py-3.5 px-4 rounded-xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)] disabled:opacity-50">
-                  {loading ? "Extracting..." : "Extract PDF & Analyze"}
+                  {loading ? "Extracting..." : "Extract Data & Analyze"}
                 </button>
               </form>
             </section>
@@ -390,7 +390,7 @@ export default function Home() {
               {result ? (
                 <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 relative overflow-hidden">
                   <div className="flex items-center justify-between mb-6">
-                    <div><h2 className="text-2xl font-bold">PDF Result</h2><p className="text-neutral-400">{result.company}</p></div>
+                    <div><h2 className="text-2xl font-bold">Extraction Result</h2><p className="text-neutral-400">{result.company}</p></div>
                     <span className={`px-4 py-1.5 rounded-full text-sm font-bold border ${getPredicateColor(result.health_predicate)}`}>{result.health_predicate}</span>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-3">
@@ -411,8 +411,8 @@ export default function Home() {
               ) : (
                 <div className="bg-neutral-900/30 border border-neutral-800 border-dashed rounded-2xl p-8 min-h-[400px] flex flex-col items-center justify-center text-center space-y-4">
                   <div className="w-16 h-16 rounded-full bg-neutral-800/50 flex items-center justify-center mb-2"><svg className="w-8 h-8 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div>
-                  <h3 className="text-xl font-semibold text-neutral-300">Upload PDF</h3>
-                  <p className="text-neutral-500 max-w-sm">Upload an Annual Report PDF to automatically extract financial data and calculate benchmark.</p>
+                  <h3 className="text-xl font-semibold text-neutral-300">Upload Report</h3>
+                  <p className="text-neutral-500 max-w-sm">Upload a PDF or XLSX Annual Report to automatically extract financial data and calculate benchmark.</p>
                 </div>
               )}
             </section>

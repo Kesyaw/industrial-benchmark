@@ -33,6 +33,7 @@ from app.models import (
 )
 from app.services.benchmark_engine import calculate_benchmark
 from app.services.pdf_extractor import extract_financial_data_from_pdf
+from app.services.xlsx_extractor import extract_financial_data_from_xlsx
 from app.services.report_generator import generate_benchmark_pdf
 
 logging.basicConfig(level=logging.INFO)
@@ -52,9 +53,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "../data/pdfs")
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "../data/uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 
 # ─────────────────────────────────────────
 # HEALTH
@@ -62,7 +62,6 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @app.get("/")
 def read_root():
     return {"message": "Industrial Benchmark API v2.0", "status": "running"}
-
 
 @app.get("/api/health")
 def health_check():
@@ -72,14 +71,12 @@ def health_check():
         "database": "connected" if db_ok else "disconnected",
     }
 
-
 # ─────────────────────────────────────────
 # SECTORS
 # ─────────────────────────────────────────
 @app.get("/api/sectors", response_model=list[SectorOut])
 def list_sectors(db: Session = Depends(get_db)):
     return db.query(Sector).order_by(Sector.name_en).all()
-
 
 # ─────────────────────────────────────────
 # COMPANIES
@@ -92,7 +89,6 @@ def list_companies(sector: str = None, db: Session = Depends(get_db)):
         if sec:
             query = query.filter(Company.sector_id == sec.id)
     return query.order_by(Company.ticker).limit(500).all()
-
 
 @app.get("/api/companies/{ticker}")
 def get_company_detail(ticker: str, db: Session = Depends(get_db)):
@@ -142,14 +138,12 @@ def get_company_detail(ticker: str, db: Session = Depends(get_db)):
         "periods": result_periods,
     }
 
-
 # ─────────────────────────────────────────
 # BENCHMARK (manual input)
 # ─────────────────────────────────────────
 @app.post("/api/benchmark", response_model=BenchmarkResult)
 def benchmark_manual(data: FinancialData, db: Session = Depends(get_db)):
     return calculate_benchmark(data, db=db)
-
 
 # ─────────────────────────────────────────
 # BENCHMARK BY SECTOR (industry averages)
@@ -182,21 +176,24 @@ def get_sector_benchmark(sector_code: str, db: Session = Depends(get_db)):
 
     return {"sector": SectorOut.model_validate(sector), "thresholds": result}
 
-
 # ─────────────────────────────────────────
-# PDF UPLOAD (backward-compatible)
+# REPORT UPLOAD (PDF or XLSX)
 # ─────────────────────────────────────────
-@app.post("/api/upload-pdf")
-async def upload_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+@app.post("/api/upload-report")
+async def upload_report(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not (file.filename.endswith(".pdf") or file.filename.endswith(".xlsx")):
+        raise HTTPException(status_code=400, detail="Only PDF or XLSX files are allowed.")
 
     file_path = os.path.join(UPLOAD_DIR, file.filename)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        financial_data = extract_financial_data_from_pdf(file_path, file.filename)
+        if file.filename.endswith(".pdf"):
+            financial_data = extract_financial_data_from_pdf(file_path, file.filename)
+        else:
+            financial_data = extract_financial_data_from_xlsx(file_path, file.filename)
+            
         result = calculate_benchmark(financial_data, db=db)
         return {
             "message": f"Processed {file.filename}",
