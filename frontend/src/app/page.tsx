@@ -112,7 +112,7 @@ export default function Home() {
   const runEtl = async () => {
     setEtlRunning(true);
     try {
-      const r = await fetch(`${API}/api/etl/run`, {
+      const r = await fetch(`${API}/api/etl/idx-download`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sector_filter: null, year: 2024, limit: 20 }),
       });
@@ -126,6 +126,28 @@ export default function Home() {
     } catch (error: any) {
       alert(`ETL Error: ${error.message}`);
     } finally { setEtlRunning(false); }
+  };
+
+  const downloadPdf = async () => {
+    if (!result) return;
+    try {
+      const response = await fetch(`${API}/api/benchmark/report-from-result`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      });
+      if (!response.ok) throw new Error("Failed to generate PDF");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `benchmark_${result.company?.replace(/\s+/g, "_") || "report"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      alert(`PDF Error: ${error.message}`);
+    }
   };
 
   const getPredicateColor = (predicate: string) => {
@@ -329,6 +351,11 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
+                  <button onClick={downloadPdf}
+                    className="mt-4 w-full py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm font-medium border border-neutral-700 transition-all flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" /></svg>
+                    Download PDF Report
+                  </button>
                 </div>
               ) : (
                 <div className="bg-neutral-900/30 border border-neutral-800 border-dashed rounded-2xl p-8 min-h-[400px] flex flex-col items-center justify-center text-center space-y-4">
@@ -375,6 +402,11 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
+                  <button onClick={downloadPdf}
+                    className="mt-4 w-full py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm font-medium border border-neutral-700 transition-all flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" /></svg>
+                    Download PDF Report
+                  </button>
                 </div>
               ) : (
                 <div className="bg-neutral-900/30 border border-neutral-800 border-dashed rounded-2xl p-8 min-h-[400px] flex flex-col items-center justify-center text-center space-y-4">

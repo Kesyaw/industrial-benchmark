@@ -15,6 +15,7 @@ Routes:
 """
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 import os
 import shutil
@@ -32,6 +33,7 @@ from app.models import (
 )
 from app.services.benchmark_engine import calculate_benchmark
 from app.services.pdf_extractor import extract_financial_data_from_pdf
+from app.services.report_generator import generate_benchmark_pdf
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -248,6 +250,21 @@ def compute_all_ratios(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/etl/idx-download")
+def run_idx_download_endpoint(req: EtlRunRequest, db: Session = Depends(get_db)):
+    """Download financial statements directly from idx.co.id (more reliable than yfinance)."""
+    from app.etl.idx_direct_scraper import run_idx_download
+    try:
+        run_idx_download(
+            sector_filter=req.sector_filter,
+            year=req.year or 2024,
+            limit=req.limit,
+        )
+        return {"status": "ok", "message": "IDX direct download completed"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─────────────────────────────────────────
 # ETL LOGS
 # ─────────────────────────────────────────
@@ -266,3 +283,35 @@ def get_etl_logs(db: Session = Depends(get_db)):
         }
         for l in logs
     ]
+
+
+# ─────────────────────────────────────────
+# PDF REPORT DOWNLOAD
+# ─────────────────────────────────────────
+@app.post("/api/benchmark/report")
+def download_benchmark_report(data: FinancialData, db: Session = Depends(get_db)):
+    """Calculate benchmark and return a downloadable PDF report."""
+    result = calculate_benchmark(data, db=db)
+    pdf_bytes = generate_benchmark_pdf(result.model_dump())
+    company_name = data.company_name.replace(" ", "_") if data.company_name else "report"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="benchmark_{company_name}.pdf"'
+        },
+    )
+
+
+@app.post("/api/benchmark/report-from-result")
+def download_report_from_result(result: dict):
+    """Generate PDF from an existing benchmark result dict (from frontend)."""
+    pdf_bytes = generate_benchmark_pdf(result)
+    company = result.get("company", "report").replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="benchmark_{company}.pdf"'
+        },
+    )
