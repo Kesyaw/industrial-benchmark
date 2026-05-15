@@ -15,6 +15,7 @@ Routes:
 """
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 import os
 import shutil
@@ -32,6 +33,8 @@ from app.models import (
 )
 from app.services.benchmark_engine import calculate_benchmark
 from app.services.pdf_extractor import extract_financial_data_from_pdf
+from app.services.xlsx_extractor import extract_financial_data_from_xlsx
+from app.services.report_generator import generate_benchmark_pdf
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -50,9 +53,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "../data/pdfs")
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "../data/uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 
 # ─────────────────────────────────────────
 # HEALTH
@@ -60,7 +62,6 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @app.get("/")
 def read_root():
     return {"message": "Industrial Benchmark API v2.0", "status": "running"}
-
 
 @app.get("/api/health")
 def health_check():
@@ -70,14 +71,12 @@ def health_check():
         "database": "connected" if db_ok else "disconnected",
     }
 
-
 # ─────────────────────────────────────────
 # SECTORS
 # ─────────────────────────────────────────
 @app.get("/api/sectors", response_model=list[SectorOut])
 def list_sectors(db: Session = Depends(get_db)):
     return db.query(Sector).order_by(Sector.name_en).all()
-
 
 # ─────────────────────────────────────────
 # COMPANIES
@@ -90,7 +89,6 @@ def list_companies(sector: str = None, db: Session = Depends(get_db)):
         if sec:
             query = query.filter(Company.sector_id == sec.id)
     return query.order_by(Company.ticker).limit(500).all()
-
 
 @app.get("/api/companies/{ticker}")
 def get_company_detail(ticker: str, db: Session = Depends(get_db)):
@@ -140,6 +138,51 @@ def get_company_detail(ticker: str, db: Session = Depends(get_db)):
         "periods": result_periods,
     }
 
+@app.get("/api/companies/{ticker}/benchmark/{year}")
+def get_company_benchmark_by_year(ticker: str, year: int, db: Session = Depends(get_db)):
+    company = db.query(Company).filter(Company.ticker == ticker.upper()).first()
+    if not company:
+        raise HTTPException(status_code=404, detail=f"Company {ticker} not found")
+        
+    period = db.query(FinancialPeriod).filter(
+        FinancialPeriod.company_id == company.id,
+        FinancialPeriod.fiscal_year == year
+    ).first()
+    
+    if not period:
+        raise HTTPException(status_code=404, detail=f"No data for {ticker} in {year}")
+        
+    metrics = (
+        db.query(MetricDefinition.code, FinancialMetric.metric_value)
+        .join(FinancialMetric, FinancialMetric.metric_definition_id == MetricDefinition.id)
+        .filter(FinancialMetric.period_id == period.id)
+        .all()
+    )
+    
+    extracted_data = {m.code: float(m.metric_value) for m in metrics if m.metric_value is not None}
+    sector = db.query(Sector).filter(Sector.id == company.sector_id).first()
+    
+    data_dict = {
+        "company_name": company.ticker,
+        "sector_code": sector.code if sector else "TRADE",
+        "current_assets": extracted_data.get("current_assets", 0.0),
+        "current_liabilities": extracted_data.get("current_liabilities", 0.0),
+        "ebit": extracted_data.get("ebit", 0.0),
+        "interest_expense": extracted_data.get("interest_expense", 0.0),
+        "ebitda": extracted_data.get("ebitda", 0.0),
+        "total_debt": extracted_data.get("total_debt", 0.0),
+        "total_equity": extracted_data.get("total_equity", 0.0),
+        "long_term_debt": extracted_data.get("long_term_debt", 0.0),
+        "total_assets": extracted_data.get("total_assets", 0.0),
+        "gross_profit": extracted_data.get("gross_profit", 0.0),
+        "net_income": extracted_data.get("net_income", 0.0),
+        "revenue": extracted_data.get("revenue", 0.0),
+        "free_operating_cash_flow": extracted_data.get("free_operating_cash_flow", 0.0),
+    }
+    
+    fin_data = FinancialData(**data_dict)
+    result = calculate_benchmark(fin_data, db=db)
+    return result
 
 # ─────────────────────────────────────────
 # BENCHMARK (manual input)
@@ -147,7 +190,6 @@ def get_company_detail(ticker: str, db: Session = Depends(get_db)):
 @app.post("/api/benchmark", response_model=BenchmarkResult)
 def benchmark_manual(data: FinancialData, db: Session = Depends(get_db)):
     return calculate_benchmark(data, db=db)
-
 
 # ─────────────────────────────────────────
 # BENCHMARK BY SECTOR (industry averages)
@@ -180,21 +222,24 @@ def get_sector_benchmark(sector_code: str, db: Session = Depends(get_db)):
 
     return {"sector": SectorOut.model_validate(sector), "thresholds": result}
 
-
 # ─────────────────────────────────────────
-# PDF UPLOAD (backward-compatible)
+# REPORT UPLOAD (PDF or XLSX)
 # ─────────────────────────────────────────
 @app.post("/api/upload-pdf")
-async def upload_pdf(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+async def upload_report(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not (file.filename.endswith(".pdf") or file.filename.endswith(".xlsx")):
+        raise HTTPException(status_code=400, detail="Only PDF or XLSX files are allowed.")
 
     file_path = os.path.join(UPLOAD_DIR, file.filename)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        financial_data = extract_financial_data_from_pdf(file_path, file.filename)
+        if file.filename.endswith(".pdf"):
+            financial_data = extract_financial_data_from_pdf(file_path, file.filename)
+        else:
+            financial_data = extract_financial_data_from_xlsx(file_path, file.filename)
+            
         result = calculate_benchmark(financial_data, db=db)
         return {
             "message": f"Processed {file.filename}",
@@ -222,20 +267,6 @@ def run_seed(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/etl/run")
-def run_etl_endpoint(req: EtlRunRequest, db: Session = Depends(get_db)):
-    """Trigger IDX data pull via ETL pipeline."""
-    from app.etl.idx_scraper import run_etl
-    try:
-        run_etl(
-            sector_filter=req.sector_filter,
-            year=req.year,
-            limit=req.limit,
-        )
-        return {"status": "ok", "message": "ETL completed"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.post("/api/etl/compute-ratios")
 def compute_all_ratios(db: Session = Depends(get_db)):
@@ -244,6 +275,21 @@ def compute_all_ratios(db: Session = Depends(get_db)):
     try:
         run_ratio_calculation_all(db)
         return {"status": "ok", "message": "Ratios computed for all periods"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/etl/idx-download")
+def run_idx_download_endpoint(req: EtlRunRequest, db: Session = Depends(get_db)):
+    """Download financial statements directly from idx.co.id (more reliable than yfinance)."""
+    from app.etl.idx_direct_scraper import run_idx_download
+    try:
+        run_idx_download(
+            sector_filter=req.sector_filter,
+            year=req.year or 2024,
+            limit=req.limit,
+        )
+        return {"status": "ok", "message": "IDX direct download completed"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -266,3 +312,35 @@ def get_etl_logs(db: Session = Depends(get_db)):
         }
         for l in logs
     ]
+
+
+# ─────────────────────────────────────────
+# PDF REPORT DOWNLOAD
+# ─────────────────────────────────────────
+@app.post("/api/benchmark/report")
+def download_benchmark_report(data: FinancialData, db: Session = Depends(get_db)):
+    """Calculate benchmark and return a downloadable PDF report."""
+    result = calculate_benchmark(data, db=db)
+    pdf_bytes = generate_benchmark_pdf(result.model_dump())
+    company_name = data.company_name.replace(" ", "_") if data.company_name else "report"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="benchmark_{company_name}.pdf"'
+        },
+    )
+
+
+@app.post("/api/benchmark/report-from-result")
+def download_report_from_result(result: dict):
+    """Generate PDF from an existing benchmark result dict (from frontend)."""
+    pdf_bytes = generate_benchmark_pdf(result)
+    company = result.get("company", "report").replace(" ", "_")
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="benchmark_{company}.pdf"'
+        },
+    )

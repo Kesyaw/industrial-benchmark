@@ -32,7 +32,10 @@ export default function Home() {
 
   const [result, setResult] = useState<BenchmarkResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"explorer" | "manual" | "pdf">("explorer");
+  const [activeTab, setActiveTab] = useState<"explorer" | "manual" | "upload">("explorer");
+  const [explorerTab, setExplorerTab] = useState<"laporan" | "analisa">("laporan");
+  const [explorerResult, setExplorerResult] = useState<BenchmarkResult | null>(null);
+  const [loadingBenchmark, setLoadingBenchmark] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [etlRunning, setEtlRunning] = useState(false);
@@ -50,11 +53,30 @@ export default function Home() {
 
   const loadCompanyDetail = async (ticker: string) => {
     setSelectedCompany(ticker);
+    setExplorerTab("laporan");
+    setExplorerResult(null);
     try {
       const r = await fetch(`${API}/api/companies/${ticker}`);
       const data = await r.json();
       setCompanyDetail(data);
     } catch { setCompanyDetail(null); }
+  };
+
+  const loadBenchmark = async (ticker: string, year: number) => {
+    try {
+      setLoadingBenchmark(true);
+      const r = await fetch(`${API}/api/companies/${ticker}/benchmark/${year}`);
+      if (r.ok) {
+        const data = await r.json();
+        setExplorerResult(data);
+      } else {
+        setExplorerResult(null);
+      }
+    } catch {
+      setExplorerResult(null);
+    } finally {
+      setLoadingBenchmark(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -112,7 +134,7 @@ export default function Home() {
   const runEtl = async () => {
     setEtlRunning(true);
     try {
-      const r = await fetch(`${API}/api/etl/run`, {
+      const r = await fetch(`${API}/api/etl/idx-download`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sector_filter: null, year: 2024, limit: 20 }),
       });
@@ -126,6 +148,28 @@ export default function Home() {
     } catch (error: any) {
       alert(`ETL Error: ${error.message}`);
     } finally { setEtlRunning(false); }
+  };
+
+  const downloadPdf = async (resToDownload: BenchmarkResult | null) => {
+    if (!resToDownload) return;
+    try {
+      const response = await fetch(`${API}/api/benchmark/report-from-result`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(resToDownload),
+      });
+      if (!response.ok) throw new Error("Failed to generate PDF");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `benchmark_${resToDownload.company?.replace(/\s+/g, "_") || "report"}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error: any) {
+      alert(`PDF Error: ${error.message}`);
+    }
   };
 
   const getPredicateColor = (predicate: string) => {
@@ -169,10 +213,10 @@ export default function Home() {
 
         {/* Tab Navigation */}
         <div className="flex space-x-2 bg-neutral-900/50 p-1.5 rounded-xl border border-neutral-800 max-w-lg mx-auto">
-          {(["explorer", "manual", "pdf"] as const).map(tab => (
+          {(["explorer", "manual", "upload"] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all capitalize ${activeTab === tab ? "bg-neutral-800 text-white shadow-sm" : "text-neutral-400 hover:text-white"}`}>
-              {tab === "explorer" ? "Explorer" : tab === "manual" ? "Manual Entry" : "PDF Upload"}
+              {tab === "explorer" ? "Explorer" : tab === "manual" ? "Manual Entry" : "Report Upload"}
             </button>
           ))}
         </div>
@@ -228,26 +272,78 @@ export default function Home() {
                     )}
                   </div>
 
-                  {companyDetail.periods?.map((p: any) => (
-                    <div key={p.period_id} className="space-y-3">
-                      <h3 className="text-sm font-semibold text-emerald-400 border-b border-neutral-800 pb-2">
-                        FY {p.fiscal_year} ({p.period_type}) — {p.source}
-                      </h3>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {p.metrics?.slice(0, 30).map((m: any) => (
-                          <div key={m.code} className="bg-neutral-950 rounded-lg p-3 border border-neutral-800/50">
-                            <p className="text-[10px] text-neutral-500 uppercase tracking-wider">{m.name_en}</p>
-                            <p className="text-sm font-mono text-white mt-0.5">
-                              {m.value != null ? (m.unit === "IDR" ? (m.value / 1e9).toFixed(2) + "B" : m.value.toFixed(4)) : "—"}
-                            </p>
-                          </div>
-                        ))}
+                  {/* Explorer Tabs */}
+                  <div className="flex space-x-6 border-b border-neutral-800 mb-6">
+                    <button 
+                      onClick={() => setExplorerTab("laporan")}
+                      className={`pb-2 text-sm font-medium transition-colors ${explorerTab === "laporan" ? "text-emerald-400 border-b-2 border-emerald-400" : "text-neutral-500 hover:text-neutral-300"}`}
+                    >
+                      Laporan Keuangan
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setExplorerTab("analisa");
+                        if (!explorerResult && companyDetail.periods?.[0]) {
+                          loadBenchmark(companyDetail.company.ticker, companyDetail.periods[0].fiscal_year);
+                        }
+                      }}
+                      className={`pb-2 text-sm font-medium transition-colors ${explorerTab === "analisa" ? "text-emerald-400 border-b-2 border-emerald-400" : "text-neutral-500 hover:text-neutral-300"}`}
+                    >
+                      Analisa Benchmark
+                    </button>
+                  </div>
+
+                  {explorerTab === "laporan" ? (
+                    companyDetail.periods?.map((p: any) => (
+                      <div key={p.period_id} className="space-y-3">
+                        <h3 className="text-sm font-semibold text-emerald-400 border-b border-neutral-800 pb-2">
+                          FY {p.fiscal_year} ({p.period_type}) — {p.source}
+                        </h3>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {p.metrics?.slice(0, 30).map((m: any) => (
+                            <div key={m.code} className="bg-neutral-950 rounded-lg p-3 border border-neutral-800/50">
+                              <p className="text-[10px] text-neutral-500 uppercase tracking-wider">{m.name_en}</p>
+                              <p className="text-sm font-mono text-white mt-0.5">
+                                {m.value != null ? (m.unit === "IDR" ? (m.value / 1e9).toFixed(2) + "B" : m.value.toFixed(4)) : "—"}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                        {p.metrics?.length > 30 && (
+                          <p className="text-xs text-neutral-500">+ {p.metrics.length - 30} more metrics</p>
+                        )}
                       </div>
-                      {p.metrics?.length > 30 && (
-                        <p className="text-xs text-neutral-500">+ {p.metrics.length - 30} more metrics</p>
+                    ))
+                  ) : (
+                    <div className="space-y-6">
+                      {loadingBenchmark ? (
+                        <p className="text-neutral-500 text-center py-10">Calculating benchmark...</p>
+                      ) : explorerResult ? (
+                        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 relative overflow-hidden">
+                          <div className="flex items-center justify-between mb-6">
+                            <div><h2 className="text-xl font-bold">Analysis Result</h2><p className="text-neutral-400">{explorerResult.company}</p></div>
+                            <span className={`px-4 py-1.5 rounded-full text-sm font-bold border ${getPredicateColor(explorerResult.health_predicate)}`}>{explorerResult.health_predicate}</span>
+                          </div>
+                          <div className="grid sm:grid-cols-2 gap-3">
+                            {explorerResult.score_details?.map(d => (
+                              <div key={d.ratio_code} className="bg-neutral-950 p-4 rounded-xl border border-neutral-800/50">
+                                <p className="text-neutral-400 text-xs mb-1">{d.ratio_code.replace(/_/g, " ")}</p>
+                                <p className="text-xl font-mono text-white">{formatNum(d.ratio_value)}</p>
+                                <p className={`text-xs mt-1 ${getLevelColor(d.score)}`}>{d.level_label} — Score: {d.score ?? "—"}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <button onClick={() => downloadPdf(explorerResult)}
+                            className="mt-4 w-full py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm font-medium border border-neutral-700 transition-all flex items-center justify-center gap-2">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" /></svg>
+                            Download PDF Report
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-neutral-500 text-center py-10">No benchmark data available. Ensure all required metrics are present.</p>
                       )}
                     </div>
-                  ))}
+                  )}
                 </div>
               ) : (
                 <div className="bg-neutral-900/30 border border-neutral-800 border-dashed rounded-2xl p-12 flex flex-col items-center justify-center text-center min-h-[400px]">
@@ -329,6 +425,11 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
+                  <button onClick={() => downloadPdf(result)}
+                    className="mt-4 w-full py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm font-medium border border-neutral-700 transition-all flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" /></svg>
+                    Download PDF Report
+                  </button>
                 </div>
               ) : (
                 <div className="bg-neutral-900/30 border border-neutral-800 border-dashed rounded-2xl p-8 min-h-[400px] flex flex-col items-center justify-center text-center space-y-4">
@@ -341,21 +442,21 @@ export default function Home() {
           </div>
         )}
 
-        {/* ═══════════ PDF TAB ═══════════ */}
-        {activeTab === "pdf" && (
+        {/* ═══════════ UPLOAD TAB ═══════════ */}
+        {activeTab === "upload" && (
           <div className="grid lg:grid-cols-12 gap-8">
             <section className="lg:col-span-5 bg-neutral-900/50 border border-neutral-800 rounded-2xl p-6">
               <form onSubmit={handleSubmitPDF} className="space-y-5">
                 <div className="border-2 border-dashed border-neutral-700 rounded-2xl p-10 text-center hover:border-emerald-500/50 transition-colors cursor-pointer bg-neutral-950/50"
                   onClick={() => fileInputRef.current?.click()}>
-                  <input type="file" ref={fileInputRef} className="hidden" accept=".pdf" onChange={handleFileChange} />
+                  <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.xlsx" onChange={handleFileChange} />
                   <div className="w-16 h-16 mx-auto bg-neutral-800 rounded-full flex items-center justify-center mb-4"><svg className="w-8 h-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg></div>
-                  <h3 className="text-lg font-medium text-white mb-1">{selectedFile ? selectedFile.name : "Click to upload PDF"}</h3>
-                  <p className="text-sm text-neutral-500">Upload an Annual Report (LK Tahunan) PDF</p>
+                  <h3 className="text-lg font-medium text-white mb-1">{selectedFile ? selectedFile.name : "Click to upload report"}</h3>
+                  <p className="text-sm text-neutral-500">Upload Annual Report (PDF or XLSX)</p>
                 </div>
                 <button type="submit" disabled={loading || !selectedFile}
                   className="w-full bg-emerald-500 hover:bg-emerald-400 text-neutral-950 font-bold py-3.5 px-4 rounded-xl transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)] disabled:opacity-50">
-                  {loading ? "Extracting..." : "Extract PDF & Analyze"}
+                  {loading ? "Extracting..." : "Extract Data & Analyze"}
                 </button>
               </form>
             </section>
@@ -363,7 +464,7 @@ export default function Home() {
               {result ? (
                 <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8 relative overflow-hidden">
                   <div className="flex items-center justify-between mb-6">
-                    <div><h2 className="text-2xl font-bold">PDF Result</h2><p className="text-neutral-400">{result.company}</p></div>
+                    <div><h2 className="text-2xl font-bold">Extraction Result</h2><p className="text-neutral-400">{result.company}</p></div>
                     <span className={`px-4 py-1.5 rounded-full text-sm font-bold border ${getPredicateColor(result.health_predicate)}`}>{result.health_predicate}</span>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-3">
@@ -375,12 +476,17 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
+                  <button onClick={() => downloadPdf(result)}
+                    className="mt-4 w-full py-2.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-sm font-medium border border-neutral-700 transition-all flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" /></svg>
+                    Download PDF Report
+                  </button>
                 </div>
               ) : (
                 <div className="bg-neutral-900/30 border border-neutral-800 border-dashed rounded-2xl p-8 min-h-[400px] flex flex-col items-center justify-center text-center space-y-4">
                   <div className="w-16 h-16 rounded-full bg-neutral-800/50 flex items-center justify-center mb-2"><svg className="w-8 h-8 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg></div>
-                  <h3 className="text-xl font-semibold text-neutral-300">Upload PDF</h3>
-                  <p className="text-neutral-500 max-w-sm">Upload an Annual Report PDF to automatically extract financial data and calculate benchmark.</p>
+                  <h3 className="text-xl font-semibold text-neutral-300">Upload Report</h3>
+                  <p className="text-neutral-500 max-w-sm">Upload a PDF or XLSX Annual Report to automatically extract financial data and calculate benchmark.</p>
                 </div>
               )}
             </section>

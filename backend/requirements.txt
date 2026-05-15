@@ -16,3 +16,5 @@ xlrd
 yfinance
 python-dotenv
 tqdm
+reportlab
+cloudscraper
