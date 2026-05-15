@@ -32,13 +32,14 @@ export default function Home() {
 
   const [result, setResult] = useState<BenchmarkResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"explorer" | "manual" | "upload">("explorer");
+  const [activeTab, setActiveTab] = useState<"explorer" | "leaderboard" | "manual" | "upload">("explorer");
   const [explorerTab, setExplorerTab] = useState<"laporan" | "analisa">("laporan");
   const [explorerResult, setExplorerResult] = useState<BenchmarkResult | null>(null);
   const [loadingBenchmark, setLoadingBenchmark] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [loadingLeaderboard, setLoadingLeaderboard] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [etlRunning, setEtlRunning] = useState(false);
 
   useEffect(() => {
     fetch(`${API}/api/sectors`).then(r => r.json()).then(setSectors).catch(() => {});
@@ -78,6 +79,29 @@ export default function Home() {
       setLoadingBenchmark(false);
     }
   };
+
+  const loadLeaderboard = async (sectorCode: string) => {
+    try {
+      setLoadingLeaderboard(true);
+      const r = await fetch(`${API}/api/benchmark/sector/${sectorCode}/year/2025`);
+      if (r.ok) {
+        const data = await r.json();
+        setLeaderboard(data.leaderboard || []);
+      } else {
+        setLeaderboard([]);
+      }
+    } catch {
+      setLeaderboard([]);
+    } finally {
+      setLoadingLeaderboard(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "leaderboard" && selectedSector) {
+      loadLeaderboard(selectedSector);
+    }
+  }, [activeTab, selectedSector]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -131,24 +155,6 @@ export default function Home() {
     } finally { setLoading(false); }
   };
 
-  const runEtl = async () => {
-    setEtlRunning(true);
-    try {
-      const r = await fetch(`${API}/api/etl/idx-download`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sector_filter: null, year: 2024, limit: 20 }),
-      });
-      const data = await r.json();
-      alert(data.message || "ETL completed!");
-      // Refresh companies
-      if (selectedSector) {
-        const cr = await fetch(`${API}/api/companies?sector=${selectedSector}`);
-        setCompanies(await cr.json());
-      }
-    } catch (error: any) {
-      alert(`ETL Error: ${error.message}`);
-    } finally { setEtlRunning(false); }
-  };
 
   const downloadPdf = async (resToDownload: BenchmarkResult | null) => {
     if (!resToDownload) return;
@@ -212,11 +218,11 @@ export default function Home() {
         </header>
 
         {/* Tab Navigation */}
-        <div className="flex space-x-2 bg-neutral-900/50 p-1.5 rounded-xl border border-neutral-800 max-w-lg mx-auto">
-          {(["explorer", "manual", "upload"] as const).map(tab => (
+        <div className="flex space-x-2 bg-neutral-900/50 p-1.5 rounded-xl border border-neutral-800 max-w-2xl mx-auto">
+          {(["explorer", "leaderboard", "manual", "upload"] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all capitalize ${activeTab === tab ? "bg-neutral-800 text-white shadow-sm" : "text-neutral-400 hover:text-white"}`}>
-              {tab === "explorer" ? "Explorer" : tab === "manual" ? "Manual Entry" : "Report Upload"}
+              {tab === "explorer" ? "Explorer" : tab === "leaderboard" ? "Sector Leaderboard" : tab === "manual" ? "Manual Entry" : "Report Upload"}
             </button>
           ))}
         </div>
@@ -230,10 +236,6 @@ export default function Home() {
               <div className="bg-neutral-900/50 border border-neutral-800 rounded-2xl p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-white">Sectors</h3>
-                  <button onClick={runEtl} disabled={etlRunning}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition disabled:opacity-50">
-                    {etlRunning ? "Pulling..." : "Pull IDX Data"}
-                  </button>
                 </div>
                 <select value={selectedSector} onChange={e => setSelectedSector(e.target.value)}
                   className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-white focus:ring-1 focus:ring-emerald-500">
@@ -352,6 +354,67 @@ export default function Home() {
                   <p className="text-neutral-500 mt-2 max-w-sm">Choose a sector and click on a company to view its financial data and computed ratios.</p>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════ LEADERBOARD TAB ═══════════ */}
+        {activeTab === "leaderboard" && (
+          <div className="grid lg:grid-cols-12 gap-6">
+            {/* Sidebar */}
+            <div className="lg:col-span-4 space-y-4">
+              <div className="bg-neutral-900/50 border border-neutral-800 rounded-2xl p-5 space-y-4">
+                <h3 className="font-semibold text-white">Select Sector</h3>
+                <select value={selectedSector} onChange={e => setSelectedSector(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm text-white focus:ring-1 focus:ring-emerald-500">
+                  {sectors.map(s => <option key={s.code} value={s.code}>{s.name_en} ({s.code})</option>)}
+                </select>
+              </div>
+            </div>
+            
+            {/* Main Panel */}
+            <div className="lg:col-span-8">
+              <div className="bg-neutral-900/50 border border-neutral-800 rounded-2xl p-6 relative overflow-hidden min-h-[500px]">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-2xl font-bold">Sector Leaderboard (2025)</h2>
+                    <p className="text-neutral-400">Comparing companies in {selectedSector}</p>
+                  </div>
+                </div>
+                
+                {loadingLeaderboard ? (
+                  <p className="text-neutral-500 text-center py-10">Calculating rankings...</p>
+                ) : leaderboard.length > 0 ? (
+                  <div className="space-y-3">
+                    {leaderboard.map((item, index) => (
+                      <div key={item.ticker} className="bg-neutral-950 p-4 rounded-xl border border-neutral-800/50 flex items-center justify-between hover:border-emerald-500/50 transition-colors cursor-default">
+                        <div className="flex items-center gap-4">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${index === 0 ? 'bg-yellow-500/20 text-yellow-500 border border-yellow-500/50' : index === 1 ? 'bg-neutral-400/20 text-neutral-400 border border-neutral-400/50' : index === 2 ? 'bg-amber-700/20 text-amber-600 border border-amber-600/50' : 'bg-neutral-800 text-neutral-500 border border-neutral-700'}`}>
+                            {index + 1}
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-white text-lg leading-none">{item.ticker}</h4>
+                            <p className="text-xs text-neutral-500 mt-1">{item.company_name}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xl font-mono font-bold text-white mb-1">{item.score.toFixed(2)}</div>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getPredicateColor(item.predicate)}`}>{item.predicate}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="w-16 h-16 rounded-full bg-neutral-800/50 flex items-center justify-center mb-4">
+                      <svg className="w-8 h-8 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                    </div>
+                    <p className="text-neutral-500">No companies found in this sector for 2025.</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

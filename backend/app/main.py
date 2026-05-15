@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 import os
+import math
 import shutil
 import logging
 
@@ -114,14 +115,22 @@ def get_company_detail(ticker: str, db: Session = Depends(get_db)):
             .order_by(MetricDefinition.sort_order)
             .all()
         )
-        metrics = [
-            MetricValueOut(
+        metrics = []
+        for m in metrics_raw:
+            val = None
+            if m.metric_value is not None:
+                try:
+                    f_val = float(m.metric_value)
+                    if not math.isnan(f_val):
+                        val = f_val
+                except ValueError:
+                    pass
+                    
+            metrics.append(MetricValueOut(
                 code=m.code, name_id=m.name_id, name_en=m.name_en,
                 category=m.category, unit=m.unit,
-                value=float(m.metric_value) if m.metric_value else None,
-            )
-            for m in metrics_raw
-        ]
+                value=val,
+            ))
         result_periods.append({
             "period_id": p.id,
             "fiscal_year": p.fiscal_year,
@@ -165,24 +174,109 @@ def get_company_benchmark_by_year(ticker: str, year: int, db: Session = Depends(
     data_dict = {
         "company_name": company.ticker,
         "sector_code": sector.code if sector else "TRADE",
-        "current_assets": extracted_data.get("current_assets", 0.0),
-        "current_liabilities": extracted_data.get("current_liabilities", 0.0),
-        "ebit": extracted_data.get("ebit", 0.0),
+        "current_assets": extracted_data.get("aset_lancar", extracted_data.get("current_assets", 0.0)),
+        "current_liabilities": extracted_data.get("liabilitas_jangka_pendek", extracted_data.get("current_liabilities", 0.0)),
+        "ebit": extracted_data.get("laba_rugi_sebelum_pajak_penghasilan", extracted_data.get("ebit", 0.0)),
         "interest_expense": extracted_data.get("interest_expense", 0.0),
-        "ebitda": extracted_data.get("ebitda", 0.0),
-        "total_debt": extracted_data.get("total_debt", 0.0),
-        "total_equity": extracted_data.get("total_equity", 0.0),
-        "long_term_debt": extracted_data.get("long_term_debt", 0.0),
-        "total_assets": extracted_data.get("total_assets", 0.0),
-        "gross_profit": extracted_data.get("gross_profit", 0.0),
-        "net_income": extracted_data.get("net_income", 0.0),
-        "revenue": extracted_data.get("revenue", 0.0),
-        "free_operating_cash_flow": extracted_data.get("free_operating_cash_flow", 0.0),
+        "ebitda": extracted_data.get("laba_rugi_sebelum_pajak_penghasilan", extracted_data.get("ebitda", 0.0)),
+        "total_debt": extracted_data.get("liabilitas", extracted_data.get("total_debt", 0.0)),
+        "total_equity": extracted_data.get("ekuitas", extracted_data.get("total_equity", 0.0)),
+        "long_term_debt": extracted_data.get("liabilitas_jangka_panjang", extracted_data.get("long_term_debt", 0.0)),
+        "total_assets": extracted_data.get("aset", extracted_data.get("total_assets", 0.0)),
+        "gross_profit": extracted_data.get("jumlah_laba_kotor", extracted_data.get("gross_profit", 0.0)),
+        "net_income": extracted_data.get("laba_rugi_tahun_berjalan", extracted_data.get("net_income", 0.0)),
+        "revenue": extracted_data.get("penjualan_dan_pendapatan_usaha", extracted_data.get("revenue", 0.0)),
+        "free_operating_cash_flow": extracted_data.get("laba_rugi_tahun_berjalan", extracted_data.get("free_operating_cash_flow", 0.0)),
     }
     
     fin_data = FinancialData(**data_dict)
     result = calculate_benchmark(fin_data, db=db)
     return result
+
+# ─────────────────────────────────────────
+# BENCHMARK SECTOR LEADERBOARD
+# ─────────────────────────────────────────
+@app.get("/api/benchmark/sector/{sector_code}/year/{year}")
+def get_sector_leaderboard_by_year(sector_code: str, year: int, db: Session = Depends(get_db)):
+    """Returns a leaderboard of companies within a sector based on their benchmark score."""
+    sector = db.query(Sector).filter(Sector.code == sector_code.upper()).first()
+    if not sector:
+        raise HTTPException(status_code=404, detail=f"Sector {sector_code} not found")
+
+    companies = db.query(Company).filter(Company.sector_id == sector.id).all()
+    company_ids = [c.id for c in companies]
+    
+    if not company_ids:
+        return {"sector": SectorOut.model_validate(sector), "year": year, "leaderboard": []}
+        
+    periods = db.query(FinancialPeriod).filter(
+        FinancialPeriod.company_id.in_(company_ids),
+        FinancialPeriod.fiscal_year == year
+    ).all()
+    
+    period_dict = {p.company_id: p for p in periods}
+    period_ids = [p.id for p in periods]
+    
+    if not period_ids:
+        return {"sector": SectorOut.model_validate(sector), "year": year, "leaderboard": []}
+
+    metrics = (
+        db.query(FinancialMetric.period_id, MetricDefinition.code, FinancialMetric.metric_value)
+        .join(MetricDefinition, FinancialMetric.metric_definition_id == MetricDefinition.id)
+        .filter(FinancialMetric.period_id.in_(period_ids))
+        .all()
+    )
+    
+    metrics_by_period = {}
+    for pid, code, val in metrics:
+        if pid not in metrics_by_period:
+            metrics_by_period[pid] = {}
+        if val is not None:
+            metrics_by_period[pid][code] = float(val)
+            
+    leaderboard = []
+    for company in companies:
+        period = period_dict.get(company.id)
+        if not period:
+            continue
+            
+        extracted = metrics_by_period.get(period.id, {})
+        
+        data_dict = {
+            "company_name": company.ticker,
+            "sector_code": sector.code,
+            "current_assets": extracted.get("aset_lancar", extracted.get("current_assets", 0.0)),
+            "current_liabilities": extracted.get("liabilitas_jangka_pendek", extracted.get("current_liabilities", 0.0)),
+            "ebit": extracted.get("laba_rugi_sebelum_pajak_penghasilan", extracted.get("ebit", 0.0)),
+            "interest_expense": extracted.get("interest_expense", 0.0),
+            "ebitda": extracted.get("laba_rugi_sebelum_pajak_penghasilan", extracted.get("ebitda", 0.0)),
+            "total_debt": extracted.get("liabilitas", extracted.get("total_debt", 0.0)),
+            "total_equity": extracted.get("ekuitas", extracted.get("total_equity", 0.0)),
+            "long_term_debt": extracted.get("liabilitas_jangka_panjang", extracted.get("long_term_debt", 0.0)),
+            "total_assets": extracted.get("aset", extracted.get("total_assets", 0.0)),
+            "gross_profit": extracted.get("jumlah_laba_kotor", extracted.get("gross_profit", 0.0)),
+            "net_income": extracted.get("laba_rugi_tahun_berjalan", extracted.get("net_income", 0.0)),
+            "revenue": extracted.get("penjualan_dan_pendapatan_usaha", extracted.get("revenue", 0.0)),
+            "free_operating_cash_flow": extracted.get("laba_rugi_tahun_berjalan", extracted.get("free_operating_cash_flow", 0.0)),
+        }
+        
+        fin_data = FinancialData(**data_dict)
+        result = calculate_benchmark(fin_data, db=db)
+        
+        leaderboard.append({
+            "ticker": company.ticker,
+            "company_name": company.name,
+            "score": result.average_score,
+            "predicate": result.health_predicate
+        })
+        
+    leaderboard.sort(key=lambda x: x["score"], reverse=True)
+    
+    return {
+        "sector": SectorOut.model_validate(sector),
+        "year": year,
+        "leaderboard": leaderboard
+    }
 
 # ─────────────────────────────────────────
 # BENCHMARK (manual input)
