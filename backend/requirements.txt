@@ -9,12 +9,8 @@ pdfplumber
 pydantic
 pydantic-settings
 python-multipart
-requests
 httpx
 openpyxl
-xlrd
-yfinance
 python-dotenv
-tqdm
 reportlab
 cloudscraper

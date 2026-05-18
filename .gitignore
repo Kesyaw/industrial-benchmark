@@ -17,5 +17,15 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Data
-backend/data/pdfs/*.pdf
+# Data — large files & generated outputs, do not push
+backend/data/pdfs/
+backend/data/uploads/
+backend/data/idx_reports/
+backend/data/processed/
+
+# Tests — local dev only, not needed in production repo
+backend/tests/
+
+# Next.js build output
+frontend/.next/
+frontend/tsconfig.tsbuildinfo

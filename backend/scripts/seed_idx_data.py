@@ -115,9 +115,6 @@ def main():
 
     # 4. Seed Financial Periods and Metrics
     print("Seeding Financial Periods and Metrics...")
-    fiscal_year = 2025
-    period_end = date(2025, 12, 31)
-
     # Process each company's dataframe records
     def process_df_metrics(df):
         for _, row in df.iterrows():
@@ -126,6 +123,15 @@ def main():
             
             company = db.query(Company).filter_by(ticker=str(ticker)).first()
             if not company: continue
+            
+            # Determine Year based on Period column if it exists
+            period_val = row.get('Period', 'Current')
+            if period_val == 'Prior':
+                fiscal_year = 2024
+                period_end = date(2024, 12, 31)
+            else:
+                fiscal_year = 2025
+                period_end = date(2025, 12, 31)
             
             period, _ = get_or_create(
                 db, FinancialPeriod,
@@ -140,7 +146,7 @@ def main():
             )
 
             for col in df.columns:
-                if col in ['Ticker', 'File']: continue
+                if col in ['Ticker', 'File', 'Period']: continue
                 if col not in metric_defs: continue
                 
                 val = row[col]
